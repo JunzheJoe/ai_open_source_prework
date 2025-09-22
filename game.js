@@ -20,6 +20,16 @@ class GameClient {
         this.activeKeys = new Set();
         this.currentDirection = null;
         
+        // UI Elements
+        this.statusIndicator = document.getElementById('status-indicator');
+        this.statusText = document.getElementById('status-text');
+        this.playerCount = document.getElementById('player-count');
+        this.myUsername = document.getElementById('my-username');
+        
+        // Animation
+        this.lastFrameTime = 0;
+        this.animationFrame = null;
+        
         // WebSocket
         this.ws = null;
         
@@ -30,7 +40,9 @@ class GameClient {
         this.setupCanvas();
         this.loadWorldMap();
         this.setupKeyboardControls();
+        this.setupUI();
         this.connectToServer();
+        this.startAnimationLoop();
     }
     
     setupCanvas() {
@@ -139,11 +151,42 @@ class GameClient {
         this.ws.send(JSON.stringify(stopMessage));
     }
     
+    setupUI() {
+        this.updateConnectionStatus('connecting', 'Connecting...');
+        this.updatePlayerCount();
+    }
+    
+    updateConnectionStatus(status, text) {
+        this.statusIndicator.className = `status-indicator ${status}`;
+        this.statusText.textContent = text;
+    }
+    
+    updatePlayerCount() {
+        const count = Object.keys(this.allPlayers).length;
+        this.playerCount.textContent = `Players: ${count}`;
+    }
+    
+    startAnimationLoop() {
+        const animate = (currentTime) => {
+            const deltaTime = currentTime - this.lastFrameTime;
+            
+            if (deltaTime >= 16) { // ~60 FPS
+                this.draw();
+                this.lastFrameTime = currentTime;
+            }
+            
+            this.animationFrame = requestAnimationFrame(animate);
+        };
+        
+        this.animationFrame = requestAnimationFrame(animate);
+    }
+    
     connectToServer() {
         this.ws = new WebSocket('wss://codepath-mmorg.onrender.com');
         
         this.ws.onopen = () => {
             console.log('Connected to game server');
+            this.updateConnectionStatus('connected', 'Connected');
             this.joinGame();
         };
         
@@ -154,10 +197,12 @@ class GameClient {
         
         this.ws.onerror = (error) => {
             console.error('WebSocket error:', error);
+            this.updateConnectionStatus('connecting', 'Connection Error');
         };
         
         this.ws.onclose = () => {
             console.log('Disconnected from server');
+            this.updateConnectionStatus('connecting', 'Reconnecting...');
             // Attempt to reconnect after 3 seconds
             setTimeout(() => {
                 this.connectToServer();
@@ -183,7 +228,7 @@ class GameClient {
                     this.allPlayers = message.players; // Store all players
                     this.myPlayer = message.players[this.myPlayerId];
                     this.updateViewport();
-                    this.draw();
+                    this.updatePlayerCount();
                     console.log('Joined game successfully!', this.myPlayer);
                 } else {
                     console.error('Failed to join game:', message.error);
@@ -201,20 +246,20 @@ class GameClient {
                         }
                     }
                 });
-                this.draw();
+                this.updatePlayerCount();
                 break;
                 
             case 'player_joined':
                 // New player joined
                 this.allPlayers[message.player.id] = message.player;
                 this.avatars[message.avatar.name] = message.avatar;
-                this.draw();
+                this.updatePlayerCount();
                 break;
                 
             case 'player_left':
                 // Player left
                 delete this.allPlayers[message.playerId];
-                this.draw();
+                this.updatePlayerCount();
                 break;
         }
     }
