@@ -9,6 +9,7 @@ class GameClient {
         // Game state
         this.myPlayerId = null;
         this.myPlayer = null;
+        this.allPlayers = {}; // Track all players
         this.avatars = {};
         
         // Viewport
@@ -179,6 +180,7 @@ class GameClient {
                 if (message.success) {
                     this.myPlayerId = message.playerId;
                     this.avatars = message.avatars;
+                    this.allPlayers = message.players; // Store all players
                     this.myPlayer = message.players[this.myPlayerId];
                     this.updateViewport();
                     this.draw();
@@ -192,6 +194,7 @@ class GameClient {
                 // Update player positions
                 Object.keys(message.players).forEach(playerId => {
                     if (message.players[playerId]) {
+                        this.allPlayers[playerId] = message.players[playerId];
                         if (playerId === this.myPlayerId) {
                             this.myPlayer = message.players[playerId];
                             this.updateViewport();
@@ -203,12 +206,14 @@ class GameClient {
                 
             case 'player_joined':
                 // New player joined
+                this.allPlayers[message.player.id] = message.player;
                 this.avatars[message.avatar.name] = message.avatar;
                 this.draw();
                 break;
                 
             case 'player_left':
                 // Player left
+                delete this.allPlayers[message.playerId];
                 this.draw();
                 break;
         }
@@ -246,7 +251,15 @@ class GameClient {
             0, 0, this.canvas.width, this.canvas.height  // destination rectangle (full canvas)
         );
         
-        // Draw my avatar if I have one
+        // Draw all players except myself
+        Object.values(this.allPlayers).forEach(player => {
+            // Only draw other players, not myself
+            if (player.id !== this.myPlayerId && this.avatars[player.avatar]) {
+                this.drawAvatar(player, this.avatars[player.avatar]);
+            }
+        });
+        
+        // Draw my avatar separately (this ensures we only see one Joe)
         if (this.myPlayer && this.avatars[this.myPlayer.avatar]) {
             this.drawAvatar(this.myPlayer, this.avatars[this.myPlayer.avatar]);
         }
