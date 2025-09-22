@@ -15,6 +15,10 @@ class GameClient {
         this.viewportX = 0;
         this.viewportY = 0;
         
+        // Movement
+        this.activeKeys = new Set();
+        this.currentDirection = null;
+        
         // WebSocket
         this.ws = null;
         
@@ -24,6 +28,7 @@ class GameClient {
     init() {
         this.setupCanvas();
         this.loadWorldMap();
+        this.setupKeyboardControls();
         this.connectToServer();
     }
     
@@ -39,6 +44,10 @@ class GameClient {
             this.updateViewport();
             this.draw();
         });
+        
+        // Make canvas focusable for keyboard events
+        this.canvas.tabIndex = 0;
+        this.canvas.focus();
     }
     
     loadWorldMap() {
@@ -47,6 +56,86 @@ class GameClient {
             this.draw();
         };
         this.worldImage.src = 'world.jpg';
+    }
+    
+    setupKeyboardControls() {
+        // Handle keydown events
+        document.addEventListener('keydown', (event) => {
+            if (this.isArrowKey(event.code)) {
+                event.preventDefault(); // Prevent browser default behavior
+                this.handleKeyDown(event.code);
+            }
+        });
+        
+        // Handle keyup events
+        document.addEventListener('keyup', (event) => {
+            if (this.isArrowKey(event.code)) {
+                event.preventDefault();
+                this.handleKeyUp(event.code);
+            }
+        });
+    }
+    
+    isArrowKey(code) {
+        return ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(code);
+    }
+    
+    getDirectionFromKey(code) {
+        const keyToDirection = {
+            'ArrowUp': 'up',
+            'ArrowDown': 'down',
+            'ArrowLeft': 'left',
+            'ArrowRight': 'right'
+        };
+        return keyToDirection[code];
+    }
+    
+    handleKeyDown(keyCode) {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        
+        const direction = this.getDirectionFromKey(keyCode);
+        if (direction) {
+            this.activeKeys.add(keyCode);
+            this.currentDirection = direction;
+            this.sendMoveCommand(direction);
+        }
+    }
+    
+    handleKeyUp(keyCode) {
+        this.activeKeys.delete(keyCode);
+        
+        // If no keys are pressed, stop movement
+        if (this.activeKeys.size === 0) {
+            this.currentDirection = null;
+            this.sendStopCommand();
+        } else {
+            // If other keys are still pressed, continue with the most recent direction
+            const remainingKeys = Array.from(this.activeKeys);
+            const lastKey = remainingKeys[remainingKeys.length - 1];
+            this.currentDirection = this.getDirectionFromKey(lastKey);
+            this.sendMoveCommand(this.currentDirection);
+        }
+    }
+    
+    sendMoveCommand(direction) {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        
+        const moveMessage = {
+            action: 'move',
+            direction: direction
+        };
+        
+        this.ws.send(JSON.stringify(moveMessage));
+    }
+    
+    sendStopCommand() {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        
+        const stopMessage = {
+            action: 'stop'
+        };
+        
+        this.ws.send(JSON.stringify(stopMessage));
     }
     
     connectToServer() {
@@ -132,11 +221,11 @@ class GameClient {
         const centerX = this.canvas.width / 2;
         const centerY = this.canvas.height / 2;
         
-        // Calculate desired viewport position
+        // Calculate desired viewport position to center the avatar
         let newViewportX = this.myPlayer.x - centerX;
         let newViewportY = this.myPlayer.y - centerY;
         
-        // Clamp to world boundaries
+        // Clamp to world boundaries to prevent showing beyond map edges
         newViewportX = Math.max(0, Math.min(newViewportX, this.worldWidth - this.canvas.width));
         newViewportY = Math.max(0, Math.min(newViewportY, this.worldHeight - this.canvas.height));
         
@@ -164,6 +253,7 @@ class GameClient {
     }
     
     drawAvatar(player, avatarData) {
+        // Calculate avatar position relative to viewport
         const avatarX = player.x - this.viewportX;
         const avatarY = player.y - this.viewportY;
         
